@@ -3,7 +3,7 @@
 assets/
 generated/
 .vs/
-
+b.iso
 # Release artifacts
 *.AppImage
 *.apk
@@ -17,8 +17,8 @@ android/build/
 
 # Release zips
 *.zip
-
-# Linux build
+out/
+# Linux build\
 /out/build/linux-amd64-debug/
 /out/build/linux-amd64-release/
 /out/build/linux-amd64-relwithdebinfo/.cmake
@@ -55,3 +55,6 @@ LICENSE_extract-xiso.txt
 renut.toml
 extract-xiso
 outlocal.properties
+renut
+out/build/linux-amd64-relwithdebinfo/renut
+out/build/linux-amd64-relwithdebinfo/renut

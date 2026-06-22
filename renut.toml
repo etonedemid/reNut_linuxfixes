@@ -1,12 +1,14 @@
 # Auto-generated cvar configuration
-license_mask = 1
-user_language = 1
-scribble_heap = true
-readback_memexport = false
-readback_memexport_fast = false
 gpu_allow_invalid_fetch_constants = true
 depth_float24_round = true
+readback_memexport = false
+readback_memexport_fast = false
+execute_unclipped_draw_vs_on_cpu = false
+resolution_scale = 2
 spirv_version_override = "auto"
-execute_unclipped_draw_vs_on_cpu = true
 mnk_mode = true
+game_data_root = "/home/etonedemid/reNut_linuxfixes/out/build/linux-amd64-relwithdebinfo/assets"
 null_page_fill = "cd"
+scribble_heap = true
+license_mask = 1
+user_language = 43

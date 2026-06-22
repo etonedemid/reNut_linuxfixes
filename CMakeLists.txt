@@ -18,11 +18,6 @@ if(REXSDK_DIR AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     add_compile_options(-mssse3)
 endif()
 
-# Force-include glibc compat header globally so .symver directives apply to ALL
-# translation units (rexcore, SDL3, imgui, FFmpeg, glslang, etc.)
-if(REXSDK_DIR AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    add_compile_options(-include ${REXSDK_DIR}/src/core/glibc_compat_force.h)
-endif()
 
 include(generated/rexglue.cmake)
 
@@ -48,6 +43,8 @@ endif()
 
 rexglue_setup_target(renut)
 
+target_include_directories(renut PRIVATE "${REXSDK_DIR}/thirdparty/imgui")
+target_include_directories(renut PRIVATE "${CMAKE_BINARY_DIR}/rexglue-sdk/include")
 # Symlink the source assets folder into the build output directory so the
 # runtime VFS can find game data regardless of which build config is active.
 add_custom_command(TARGET renut POST_BUILD

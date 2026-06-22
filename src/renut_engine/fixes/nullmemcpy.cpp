@@ -12,8 +12,8 @@
 #include <cstring>
 
 // memcpy  @ 0x82BB4510
-PPC_FUNC_IMPL(sub_82BB4510) {
-    PPC_FUNC_PROLOGUE();
+REX_EXTERN(sub_82BB4510) {
+    REX_FUNC_PROLOGUE();
     uint32_t dst = ctx.r3.u32;
     uint32_t src = ctx.r4.u32;
     uint32_t n   = ctx.r5.u32;
@@ -21,17 +21,17 @@ PPC_FUNC_IMPL(sub_82BB4510) {
         // Return dst unchanged (C memcpy contract)
         return;
     }
-    std::memcpy(PPC_RAW_ADDR(dst), PPC_RAW_ADDR(src), n);
+    std::memcpy(REX_RAW_ADDR(dst), REX_RAW_ADDR(src), n);
 }
 
 // memmove @ 0x82BB2C70
-PPC_FUNC_IMPL(sub_82BB2C70) {
-    PPC_FUNC_PROLOGUE();
+REX_EXTERN(sub_82BB2C70) {
+    REX_FUNC_PROLOGUE();
     uint32_t dst = ctx.r3.u32;
     uint32_t src = ctx.r4.u32;
     uint32_t n   = ctx.r5.u32;
     if (!dst || !src || !n) {
         return;
     }
-    std::memmove(PPC_RAW_ADDR(dst), PPC_RAW_ADDR(src), n);
+    std::memmove(REX_RAW_ADDR(dst), REX_RAW_ADDR(src), n);
 }

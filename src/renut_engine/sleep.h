@@ -70,4 +70,4 @@ u32 Sleep_hook(u32 ms) {
 
     return 0;
 }
-PPC_HOOK(sub_82715B60, Sleep_hook);
+REX_HOOK(sub_82715B60, Sleep_hook);
