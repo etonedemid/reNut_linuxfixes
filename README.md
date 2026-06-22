@@ -179,11 +179,8 @@ Point it at your Banjo-Kazooie: Nuts & Bolts (US) ISO.
 
 KNOWN ISSUES
 -----------------------------------------------
-1. Animations are a little jank (there's jitter, banjo's and others bones break, some of the animations are half done, and some other little ancillaries) but they do not inhibit gameplay, it's just funny to see happen.
-2. The Jiggy Challenge "Old Dog, New Tricks" in Nutty Acres Act 5 will crash the game when starting it.
-3. Water doesn't render (Atleast on linux)
-4. The Jiggy Challenge Even Older Dog, Newer Tricks crashes similarly to 2.
-
+1. Water doesn't render on linux and android
+ 
 MAKING AN ISSUE
 --------------------------
 The Issues tab is a place for things like crashes that happen in game that arent already noted, please refrain from making issues like "Game wont open" or "Have to use ISOs?".
