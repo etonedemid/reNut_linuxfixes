@@ -145,7 +145,7 @@ bool BanjoActorOverride(PPCRegister& r3, PPCRegister& r5) {
         return false;
     }
 
-    // "default" — let the original function run
+    // "default" -- let the original function run
     return true;
 }
 

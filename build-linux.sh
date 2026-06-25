@@ -1,5 +1,5 @@
 #!/bin/bash
-# build-linux.sh — install dependencies, clone, and compile reNut on Linux
+# build-linux.sh -- install dependencies, clone, and compile reNut on Linux
 #
 # Supports Arch/Manjaro/SteamOS, Ubuntu/Debian, and Fedora/RHEL.
 # Usage: bash build-linux.sh
@@ -123,7 +123,7 @@ install_deps_arch() {
     done
 
     if [ ${#MISSING[@]} -eq 0 ]; then
-        info "All dependencies already installed — nothing to do."
+        info "All dependencies already installed -- nothing to do."
     else
         info "Installing ${#MISSING[@]} missing package(s): ${MISSING[*]}"
         sudo pacman -S --needed --noconfirm "${MISSING[@]}"
@@ -173,7 +173,7 @@ install_deps_debian() {
     done
 
     if [ ${#MISSING[@]} -eq 0 ]; then
-        info "All dependencies already installed — nothing to do."
+        info "All dependencies already installed -- nothing to do."
     else
         info "Installing ${#MISSING[@]} missing package(s)…"
         sudo apt-get update
@@ -204,7 +204,7 @@ install_deps_fedora() {
     done
 
     if [ ${#MISSING[@]} -eq 0 ]; then
-        info "All dependencies already installed — nothing to do."
+        info "All dependencies already installed -- nothing to do."
     else
         info "Installing ${#MISSING[@]} missing package(s)…"
         sudo dnf install -y "${MISSING[@]}"
@@ -234,7 +234,7 @@ install_deps_suse() {
 
     # Always ensure devel_basis pattern
     if [ ${#MISSING[@]} -eq 0 ]; then
-        info "All dependencies already installed — nothing to do."
+        info "All dependencies already installed -- nothing to do."
     else
         info "Installing ${#MISSING[@]} missing package(s)…"
         sudo zypper install -y -t pattern devel_basis
@@ -245,7 +245,7 @@ install_deps_suse() {
 _create_pc_shim() {
     local name="$1" libs="$2"
     if ! pkg-config --exists "$name" 2>/dev/null; then
-        warn "${name}.pc not found — generating a shim…"
+        warn "${name}.pc not found -- generating a shim…"
         local shim_dir="$HOME/.local/lib/pkgconfig"
         mkdir -p "$shim_dir"
         local ver
@@ -316,10 +316,10 @@ case "$DISTRO" in
     void)         install_deps_void ;;
     gentoo)       install_deps_gentoo ;;
     *)
-        warn "Unsupported distro ($DISTRO) — skipping automatic dependency install."
+        warn "Unsupported distro ($DISTRO) -- skipping automatic dependency install."
         warn "You MUST install the following before building:"
         warn "  Build tools: clang lld ninja cmake pkg-config git"
-        warn "  C library dev headers (REQUIRED — provides pthread.h):"
+        warn "  C library dev headers (REQUIRED -- provides pthread.h):"
         warn "    Debian/Ubuntu: sudo apt install build-essential libc6-dev"
         warn "    Fedora/RHEL:   sudo dnf install glibc-devel"
         warn "    Void:          sudo xbps-install -S base-devel"
@@ -334,7 +334,7 @@ esac
 # SDL3 requires pthreads; check that pthread.h is available before cmake runs.
 if command -v "${CC:-clang}" &>/dev/null; then
     if ! echo '#include <pthread.h>' | "${CC:-clang}" -fsyntax-only -x c - 2>/dev/null; then
-        error "pthread.h not found — install your C library development headers.
+        error "pthread.h not found -- install your C library development headers.
   Arch/SteamOS: sudo pacman -S glibc linux-api-headers
   Debian/Ubuntu: sudo apt install libc6-dev
   Fedora/RHEL: sudo dnf install glibc-devel
@@ -343,7 +343,7 @@ if command -v "${CC:-clang}" &>/dev/null; then
   NixOS: ensure glibc.dev is in your nix shell"
     fi
 else
-    warn "No C compiler (clang) found — cannot verify pthread.h availability."
+    warn "No C compiler (clang) found -- cannot verify pthread.h availability."
 fi
 
 # ── Step 2: check cmake version (need >= 3.25) ───────────────────────────────
@@ -376,12 +376,12 @@ fi
 git_update() {
     local dir="$1" repo="$2" branch="$3"
     if [ -d "$dir/.git" ]; then
-        info "$(basename "$dir") already cloned — updating…"
+        info "$(basename "$dir") already cloned -- updating…"
         # Fix up origin URL if the repo was cloned from a different fork
         local current_url
         current_url=$(git -C "$dir" remote get-url origin 2>/dev/null || echo "")
         if [ "$current_url" != "$repo" ]; then
-            warn "Remote URL changed ($current_url → $repo) — updating…"
+            warn "Remote URL changed ($current_url → $repo) -- updating…"
             git -C "$dir" remote set-url origin "$repo"
         fi
         git -C "$dir" fetch --depth 1 origin "$branch"
