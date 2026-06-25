@@ -28,6 +28,54 @@ public class SDLActivity {
     // ── Called by SDL_android.c nativeSetupJNI() ──────────────────────
     public static native void nativeSetupJNI();
 
+    // ── The rest of SDLActivity_tab: SDL's JNI_OnLoad calls RegisterNatives
+    //    for ALL of these, so every one must be declared or the registration
+    //    aborts the process. We do not call them ourselves (our RenutActivity
+    //    drives the engine), they exist only to satisfy RegisterNatives.
+    public static native String nativeGetVersion();
+    public static native void nativeInitMainThread();
+    public static native void nativeCleanupMainThread();
+    public static native int nativeRunMain(String a0, String a1, Object a2);
+    public static native void onNativeDropFile(String a0);
+    public static native void nativeSetScreenResolution(int a0, int a1, int a2, int a3, float a4, float a5);
+    public static native void onNativeResize();
+    public static native void onNativeSurfaceCreated();
+    public static native void onNativeSurfaceChanged();
+    public static native void onNativeSurfaceDestroyed();
+    public static native void onNativeScreenKeyboardShown();
+    public static native void onNativeScreenKeyboardHidden();
+    public static native void onNativeKeyDown(int a0);
+    public static native void onNativeKeyUp(int a0);
+    public static native boolean onNativeSoftReturnKey();
+    public static native void onNativeKeyboardFocusLost();
+    public static native void onNativeTouch(int a0, int a1, int a2, float a3, float a4, float a5);
+    public static native void onNativePinchStart();
+    public static native void onNativePinchUpdate(float a0);
+    public static native void onNativePinchEnd();
+    public static native void onNativeMouse(int a0, int a1, float a2, float a3, boolean a4);
+    public static native void onNativePen(int a0, int a1, int a2, int a3, float a4, float a5, float a6);
+    public static native void onNativeAccel(float a0, float a1, float a2);
+    public static native void onNativeClipboardChanged();
+    public static native void nativeLowMemory();
+    public static native void onNativeLocaleChanged();
+    public static native void onNativeDarkModeChanged(boolean a0);
+    public static native void nativeSendQuit();
+    public static native void nativeQuit();
+    public static native void nativePause();
+    public static native void nativeResume();
+    public static native void nativeFocusChanged(boolean a0);
+    public static native String nativeGetHint(String a0);
+    public static native boolean nativeGetHintBoolean(String a0, boolean a1);
+    public static native void nativeSetenv(String a0, String a1);
+    public static native void nativeSetNaturalOrientation(int a0);
+    public static native void onNativeRotationChanged(int a0);
+    public static native void onNativeInsetsChanged(int a0, int a1, int a2, int a3);
+    public static native void nativeAddTouch(int a0, String a1);
+    public static native void nativePermissionResult(int a0, boolean a1);
+    public static native boolean nativeAllowRecreateActivity();
+    public static native int nativeCheckSDLThreadCounter();
+    public static native void onNativeFileDialog(int a0, String[] a1, int a2);
+
     // ── Methods looked up by GetStaticMethodID ────────────────────────
 
     public static Activity getContext() {
