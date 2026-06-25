@@ -16,6 +16,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
 import android.provider.Settings;
 import android.view.Choreographer;
@@ -523,14 +524,7 @@ public class RenutActivity extends Activity
 
         if (requestCode == REQ_PICK_ISO) {
             if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
-            String isoPath = resolveDocumentUri(data.getData());
-            if (isoPath == null) {
-                Toast.makeText(this,
-                        "Could not resolve the ISO path.\nPut the .iso on internal storage and try again.",
-                        Toast.LENGTH_LONG).show();
-                return;
-            }
-            extractIsoAsync(isoPath);
+            extractIsoAsync(data.getData());
             return;
         }
 
@@ -585,52 +579,39 @@ public class RenutActivity extends Activity
         return null;
     }
 
-    /** Like resolveTreeUri but for a single-document (ACTION_OPEN_DOCUMENT) URI. */
-    private String resolveDocumentUri(Uri docUri) {
-        try {
-            String docId = DocumentsContract.getDocumentId(docUri);
-            if (docId != null && docId.contains(":")) {
-                String[] parts = docId.split(":", 2);
-                String volume   = parts[0];
-                String relative = parts.length > 1 ? parts[1] : "";
-                if ("primary".equalsIgnoreCase(volume)) {
-                    String base = Environment.getExternalStorageDirectory().getAbsolutePath();
-                    return relative.isEmpty() ? base : base + "/" + relative;
-                }
-            }
-        } catch (Exception ignored) { }
-        return null;
-    }
-
     // -----------------------------------------------------------------------
     // ISO extraction (pick .iso -> unpack to internal storage -> use folder)
     // -----------------------------------------------------------------------
 
-    private void extractIsoAsync(final String isoPath) {
+    private void extractIsoAsync(final Uri uri) {
         final String destDir = new File(getFilesDir(), "game").getAbsolutePath();
-
-        // Indeterminate progress dialog — extraction can take several minutes.
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.HORIZONTAL);
-        box.setGravity(Gravity.CENTER_VERTICAL);
-        box.setPadding(dp(24), dp(24), dp(24), dp(24));
-        box.addView(new ProgressBar(this));
-        TextView msg = new TextView(this);
-        msg.setText("  Extracting ISO to internal storage...\n  This can take several minutes.");
-        msg.setTextColor(C_TEXT);
-        box.addView(msg);
-
-        final AlertDialog dialog = new AlertDialog.Builder(this)
-                .setView(box).setCancelable(false).create();
+        final AlertDialog dialog = simpleProgress(
+                "Extracting ISO to internal storage...\n  This can take several minutes.");
         dialog.show();
 
         new Thread(() -> {
             // Clear any previous/partial extraction so a failed run can't be reused.
             deleteRecursive(new File(destDir));
-            final boolean ok = nativeExtractIso(isoPath, destDir);
+            boolean ok = false;
+            // Read the ISO through its content URI -- works no matter where the
+            // file lives (Downloads, SD card, cloud-backed, ...). We hand native a
+            // /proc/self/fd path for the open descriptor instead of resolving a real
+            // filesystem path (which only works for primary storage).
+            ParcelFileDescriptor pfd = null;
+            try {
+                pfd = getContentResolver().openFileDescriptor(uri, "r");
+                if (pfd != null) {
+                    ok = nativeExtractIso("/proc/self/fd/" + pfd.getFd(), destDir);
+                }
+            } catch (Exception e) {
+                ok = false;
+            } finally {
+                if (pfd != null) try { pfd.close(); } catch (Exception ignored) { }
+            }
+            final boolean success = ok;
             new Handler(Looper.getMainLooper()).post(() -> {
                 dialog.dismiss();
-                if (ok) {
+                if (success) {
                     setGameDir(destDir);
                     Toast.makeText(this, "Game installed to internal storage.",
                             Toast.LENGTH_SHORT).show();
