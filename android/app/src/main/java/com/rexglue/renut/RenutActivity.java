@@ -1,6 +1,7 @@
 package com.rexglue.renut;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
@@ -33,11 +34,14 @@ import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import org.libsdl.app.SDLControllerManager;
+
+import java.io.File;
 
 /**
  * Main activity for reNut on Android.
@@ -51,8 +55,12 @@ public class RenutActivity extends Activity
 
     private static final int REQ_PICK_FOLDER   = 1001;
     private static final int REQ_MANAGE_STORAGE = 1002;
+    private static final int REQ_PICK_ISO       = 1003;
+    private static final int REQ_PICK_DRIVER    = 1004;
     private static final String PREFS_NAME      = "renut_prefs";
     private static final String PREF_GAME_DIR   = "game_directory";
+    private static final String PREF_DRIVER_NAME = "gpu_driver_name";
+    private static final String PREF_DRIVER_DIR  = "gpu_driver_dir";
 
     // Colour palette
     private static final int C_BG       = 0xFF0d1117;
@@ -69,6 +77,9 @@ public class RenutActivity extends Activity
 
     // --- Native methods ---
     private native boolean nativeInit(Surface surface, String appId, String gameDir, String filesDir);
+    private native boolean nativeExtractIso(String isoPath, String destDir);
+    private native void nativeConfigureGpuDriver(String nativeLibDir, String tmpDir,
+                                                 String driverDir, String driverName);
     private native void nativeSurfaceChanged(int width, int height);
     private native void nativeSurfaceDestroyed();
     private native void nativePumpEvents();
@@ -316,6 +327,44 @@ public class RenutActivity extends Activity
         refreshPathText();
         card.addView(mPathText);
 
+        // Install-from-ISO button: pick a single .iso, unpack it into internal
+        // app storage, then use that folder as the library.
+        Button isoBtn = new Button(this);
+        isoBtn.setText("Install from ISO...");
+        isoBtn.setTextSize(13);
+        isoBtn.setTypeface(Typeface.DEFAULT_BOLD);
+        isoBtn.setAllCaps(false);
+        GradientDrawable isoBg = new GradientDrawable();
+        isoBg.setColor(C_BTN_DIS);
+        isoBg.setCornerRadius(dp(6));
+        isoBtn.setBackground(isoBg);
+        isoBtn.setTextColor(C_TEXT);
+        LinearLayout.LayoutParams isoLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        isoLp.topMargin = dp(12);
+        isoBtn.setLayoutParams(isoLp);
+        isoBtn.setOnClickListener(v -> pickIso());
+        card.addView(isoBtn);
+
+        // Optional custom GPU driver (libadrenotools) — pick a Turnip driver
+        // .zip or .so. Empty = stock system Vulkan driver.
+        Button drvBtn = new Button(this);
+        drvBtn.setText("GPU driver (optional)...");
+        drvBtn.setTextSize(13);
+        drvBtn.setTypeface(Typeface.DEFAULT_BOLD);
+        drvBtn.setAllCaps(false);
+        GradientDrawable drvBg = new GradientDrawable();
+        drvBg.setColor(C_BTN_DIS);
+        drvBg.setCornerRadius(dp(6));
+        drvBtn.setBackground(drvBg);
+        drvBtn.setTextColor(C_TEXT);
+        LinearLayout.LayoutParams drvLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        drvLp.topMargin = dp(8);
+        drvBtn.setLayoutParams(drvLp);
+        drvBtn.setOnClickListener(v -> pickDriver());
+        card.addView(drvBtn);
+
         return card;
     }
 
@@ -453,6 +502,14 @@ public class RenutActivity extends Activity
         startActivityForResult(intent, REQ_PICK_FOLDER);
     }
 
+    private void pickIso() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");   // .iso has no registered MIME type
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startActivityForResult(intent, REQ_PICK_ISO);
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
@@ -461,6 +518,25 @@ public class RenutActivity extends Activity
             // User returned from the All Files Access settings page
             refreshPermCard();
             refreshPlayButton();
+            return;
+        }
+
+        if (requestCode == REQ_PICK_ISO) {
+            if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+            String isoPath = resolveDocumentUri(data.getData());
+            if (isoPath == null) {
+                Toast.makeText(this,
+                        "Could not resolve the ISO path.\nPut the .iso on internal storage and try again.",
+                        Toast.LENGTH_LONG).show();
+                return;
+            }
+            extractIsoAsync(isoPath);
+            return;
+        }
+
+        if (requestCode == REQ_PICK_DRIVER) {
+            if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+            installDriverAsync(data.getData());
             return;
         }
 
@@ -509,6 +585,199 @@ public class RenutActivity extends Activity
         return null;
     }
 
+    /** Like resolveTreeUri but for a single-document (ACTION_OPEN_DOCUMENT) URI. */
+    private String resolveDocumentUri(Uri docUri) {
+        try {
+            String docId = DocumentsContract.getDocumentId(docUri);
+            if (docId != null && docId.contains(":")) {
+                String[] parts = docId.split(":", 2);
+                String volume   = parts[0];
+                String relative = parts.length > 1 ? parts[1] : "";
+                if ("primary".equalsIgnoreCase(volume)) {
+                    String base = Environment.getExternalStorageDirectory().getAbsolutePath();
+                    return relative.isEmpty() ? base : base + "/" + relative;
+                }
+            }
+        } catch (Exception ignored) { }
+        return null;
+    }
+
+    // -----------------------------------------------------------------------
+    // ISO extraction (pick .iso -> unpack to internal storage -> use folder)
+    // -----------------------------------------------------------------------
+
+    private void extractIsoAsync(final String isoPath) {
+        final String destDir = new File(getFilesDir(), "game").getAbsolutePath();
+
+        // Indeterminate progress dialog — extraction can take several minutes.
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.HORIZONTAL);
+        box.setGravity(Gravity.CENTER_VERTICAL);
+        box.setPadding(dp(24), dp(24), dp(24), dp(24));
+        box.addView(new ProgressBar(this));
+        TextView msg = new TextView(this);
+        msg.setText("  Extracting ISO to internal storage...\n  This can take several minutes.");
+        msg.setTextColor(C_TEXT);
+        box.addView(msg);
+
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setView(box).setCancelable(false).create();
+        dialog.show();
+
+        new Thread(() -> {
+            // Clear any previous/partial extraction so a failed run can't be reused.
+            deleteRecursive(new File(destDir));
+            final boolean ok = nativeExtractIso(isoPath, destDir);
+            new Handler(Looper.getMainLooper()).post(() -> {
+                dialog.dismiss();
+                if (ok) {
+                    setGameDir(destDir);
+                    Toast.makeText(this, "Game installed to internal storage.",
+                            Toast.LENGTH_SHORT).show();
+                } else {
+                    deleteRecursive(new File(destDir));
+                    Toast.makeText(this,
+                            "Extraction failed. Check it is a valid Nuts & Bolts ISO\n"
+                            + "and that there is enough free space.",
+                            Toast.LENGTH_LONG).show();
+                }
+            });
+        }, "iso-extract").start();
+    }
+
+    private static void deleteRecursive(File f) {
+        if (f == null || !f.exists()) return;
+        File[] kids = f.listFiles();
+        if (kids != null) for (File k : kids) deleteRecursive(k);
+        f.delete();
+    }
+
+    // -----------------------------------------------------------------------
+    // Custom GPU driver (libadrenotools) — optional Turnip/Mesa driver
+    // -----------------------------------------------------------------------
+
+    private void configureGpuDriverFromPrefs() {
+        SharedPreferences p = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        String name = p.getString(PREF_DRIVER_NAME, "");
+        String dir  = p.getString(PREF_DRIVER_DIR, "");
+        // Empty name -> native keeps the stock system Vulkan driver.
+        nativeConfigureGpuDriver(getApplicationInfo().nativeLibraryDir,
+                                 getCacheDir().getAbsolutePath(), dir, name);
+    }
+
+    private void pickDriver() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");   // driver .zip or .so
+        startActivityForResult(intent, REQ_PICK_DRIVER);
+    }
+
+    private void installDriverAsync(final Uri uri) {
+        final AlertDialog dialog = simpleProgress("Installing GPU driver...");
+        dialog.show();
+        new Thread(() -> {
+            String name = null;
+            final File driverDir = new File(getFilesDir(), "drivers");
+            try {
+                deleteRecursive(driverDir);
+                driverDir.mkdirs();
+                String fileName = queryDisplayName(uri);
+                if (fileName != null && fileName.toLowerCase().endsWith(".zip")) {
+                    name = installDriverZip(uri, driverDir);
+                } else {
+                    String soName = (fileName != null && fileName.endsWith(".so"))
+                            ? fileName : "libvulkan_freedreno.so";
+                    try (java.io.InputStream in = getContentResolver().openInputStream(uri)) {
+                        copyStreamToFile(in, new File(driverDir, soName));
+                    }
+                    name = soName;
+                }
+            } catch (Exception e) {
+                name = null;
+            }
+            final String driverName = name;
+            new Handler(Looper.getMainLooper()).post(() -> {
+                dialog.dismiss();
+                if (driverName != null) {
+                    getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                            .putString(PREF_DRIVER_NAME, driverName)
+                            .putString(PREF_DRIVER_DIR, driverDir.getAbsolutePath())
+                            .apply();
+                    Toast.makeText(this, "GPU driver set: " + driverName
+                            + "\nUsed next time you press PLAY.", Toast.LENGTH_LONG).show();
+                } else {
+                    deleteRecursive(driverDir);
+                    Toast.makeText(this, "Could not install driver (no .so found).",
+                            Toast.LENGTH_LONG).show();
+                }
+            });
+        }, "driver-install").start();
+    }
+
+    /** Extracts a driver .zip; returns the .so to load (from meta.json if present). */
+    private String installDriverZip(Uri uri, File destDir) throws Exception {
+        byte[] buf = new byte[65536];
+        try (java.util.zip.ZipInputStream zis =
+                     new java.util.zip.ZipInputStream(getContentResolver().openInputStream(uri))) {
+            java.util.zip.ZipEntry e;
+            while ((e = zis.getNextEntry()) != null) {
+                if (e.isDirectory()) continue;
+                String n = new File(e.getName()).getName();   // flatten subdirs
+                if (n.isEmpty()) continue;
+                try (java.io.FileOutputStream fos = new java.io.FileOutputStream(new File(destDir, n))) {
+                    int r; while ((r = zis.read(buf)) > 0) fos.write(buf, 0, r);
+                }
+            }
+        }
+        String libraryName = null;
+        File meta = new File(destDir, "meta.json");
+        if (meta.exists()) {
+            try {
+                String json = new String(java.nio.file.Files.readAllBytes(meta.toPath()));
+                libraryName = new org.json.JSONObject(json).optString("libraryName", null);
+                if (libraryName != null && libraryName.isEmpty()) libraryName = null;
+            } catch (Exception ignored) { }
+        }
+        if (libraryName == null) {
+            File[] sos = destDir.listFiles((d, nm) -> nm.endsWith(".so"));
+            if (sos != null && sos.length > 0) {
+                libraryName = sos[0].getName();
+                for (File s : sos) if (s.getName().contains("vulkan")) { libraryName = s.getName(); break; }
+            }
+        }
+        return libraryName;
+    }
+
+    private static void copyStreamToFile(java.io.InputStream in, File out) throws Exception {
+        try (java.io.OutputStream os = new java.io.FileOutputStream(out)) {
+            byte[] buf = new byte[65536];
+            int r; while ((r = in.read(buf)) > 0) os.write(buf, 0, r);
+        }
+    }
+
+    private String queryDisplayName(Uri uri) {
+        try (android.database.Cursor c = getContentResolver().query(uri, null, null, null, null)) {
+            if (c != null && c.moveToFirst()) {
+                int idx = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+                if (idx >= 0) return c.getString(idx);
+            }
+        } catch (Exception ignored) { }
+        return null;
+    }
+
+    private AlertDialog simpleProgress(String message) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.HORIZONTAL);
+        box.setGravity(Gravity.CENTER_VERTICAL);
+        box.setPadding(dp(24), dp(24), dp(24), dp(24));
+        box.addView(new ProgressBar(this));
+        TextView msg = new TextView(this);
+        msg.setText("  " + message);
+        msg.setTextColor(C_TEXT);
+        box.addView(msg);
+        return new AlertDialog.Builder(this).setView(box).setCancelable(false).create();
+    }
+
     // -----------------------------------------------------------------------
     // Game launch
     // -----------------------------------------------------------------------
@@ -535,6 +804,7 @@ public class RenutActivity extends Activity
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
         if (!mInitialised && mGameDir != null) {
+            configureGpuDriverFromPrefs();
             mInitialised = nativeInit(holder.getSurface(), "renut", mGameDir, getFilesDir().getAbsolutePath());
             if (!mInitialised) {
                 showMenu();

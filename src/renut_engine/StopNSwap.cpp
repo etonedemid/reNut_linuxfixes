@@ -26,7 +26,7 @@ void StopNSwap_hook(PPCRegister& r22)
     // Force all Stop-N-Swap flags
     uint8_t* base = reinterpret_cast<uint8_t*>(0x100000000);
 
-    // Read the guest pointer at *(a1 + 92) — big-endian byte swap
+    // Read the guest pointer at *(a1 + 92) -- big-endian byte swap
     uint32_t flags_ptr = REX_BSWAP32(*reinterpret_cast<uint32_t*>(base + a1 + 92));
 
 

@@ -46,7 +46,7 @@ android {
     // Use the prebuilt librenut.so from the CMake build directory
     sourceSets {
         getByName("main") {
-            // Assets are too large for APK (~6GB) — push them to device storage
+            // Assets are too large for APK (~6GB) -- push them to device storage
             // via: adb push assets/ /sdcard/Android/data/com.rexglue.renut/files/assets/
         }
         getByName("debug") {

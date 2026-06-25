@@ -1,5 +1,5 @@
 /**
- * nullmemcpy.cpp — Guard against memcpy/memmove with null destination.
+ * nullmemcpy.cpp -- Guard against memcpy/memmove with null destination.
  *
  * The game's movie player (CCalVideoRenderer → CCalMoviePlayer) calls memcpy
  * with a null destination (r3=0) when a video buffer hasn't been allocated.

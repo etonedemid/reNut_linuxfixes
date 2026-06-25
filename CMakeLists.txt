@@ -10,14 +10,30 @@ project(renut LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-if(NOT REXSDK_DIR AND EXISTS "${CMAKE_SOURCE_DIR}/../rexglue-sdk/CMakeLists.txt")
-    set(REXSDK_DIR "${CMAKE_SOURCE_DIR}/../rexglue-sdk" CACHE PATH "Path to rexglue-sdk source tree" FORCE)
+# Auto-detect the SDK source tree as a sibling directory. Prefer the active
+# fork (achievements + linux + android) and fall back to a plain rexglue-sdk.
+if(NOT REXSDK_DIR)
+    foreach(_sdk_dir "rexglue-sdk-achievementslinuxandroid" "rexglue-sdk")
+        if(EXISTS "${CMAKE_SOURCE_DIR}/../${_sdk_dir}/CMakeLists.txt")
+            set(REXSDK_DIR "${CMAKE_SOURCE_DIR}/../${_sdk_dir}" CACHE PATH "Path to rexglue-sdk source tree" FORCE)
+            break()
+        endif()
+    endforeach()
 endif()
 
 if(REXSDK_DIR AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     add_compile_options(-mssse3)
 endif()
 
+# Force-include the glibc compat header for ALL translation units (rexcore, SDL3,
+# imgui, FFmpeg, glslang, ...) so its .symver directives pin every symbol to an old
+# glibc version. This lets the Linux binary run against older system glibc than the
+# build host -- i.e. the release isn't tied to the builder's glibc. Must precede the
+# add_subdirectory() in rexglue.cmake so subdir targets inherit the flag.
+# ponytail: symver-pin, not static glibc -- the GTK3/SDL3 stack is dynamic anyway.
+if(REXSDK_DIR AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_compile_options(-include ${REXSDK_DIR}/src/core/glibc_compat_force.h)
+endif()
 
 include(generated/rexglue.cmake)
 
@@ -57,7 +73,7 @@ add_custom_command(TARGET renut POST_BUILD
         "${CMAKE_SOURCE_DIR}/renut.toml"
         "$<TARGET_FILE_DIR:renut>/renut.toml"
     COMMENT "Symlinking assets and renut.toml -> build output"
-)
+)   
 
 # On Linux: copy launch.sh, extract-xiso and renut.toml into the build dir
 # so the binary directory is self-contained and ready to package.
