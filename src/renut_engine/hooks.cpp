@@ -169,10 +169,17 @@ void klungofps2() {
 // polling nut_D3D_CBlocker_Check (sub_8264DCD0) until it returns 0. With the
 // Xenos GPU disabled (no plugin, native-rendering mode) the fence value is
 // never written, so the D3D loader thread spins forever during boot asset
-// loading. There is no GPU to wait for, so report every fence as already
-// satisfied (r3 = 0), letting BlockOnFence's loop exit immediately.
-// ponytail: remove once the native renderer signals real fences.
+// loading. Only when there is no GPU to wait for do we short-circuit the check
+// (r3 = 0 => fence satisfied) so BlockOnFence's loop exits. When a real GPU
+// (Xenos plugin) is present, run the original check so fences are honoured and
+// rendering stays correct.
+// ponytail: drop the stub branch once the native renderer signals real fences.
+REX_EXTERN(__imp__sub_8264DCD0);
 REX_HOOK_RAW(sub_8264DCD0) {
+    if (REX_KERNEL_STATE()->emulator()->graphics_system()) {
+        __imp__sub_8264DCD0(ctx, base);
+        return;
+    }
     (void)base;
     ctx.r3.u64 = 0;
 }
