@@ -162,3 +162,17 @@ void klungofps2() {
         return;
     }
 }
+
+// Headless GPU fence stub.
+//
+// nut_D3D_CDevice_BlockOnFence (sub_8228F558) busy-waits on a GPU fence,
+// polling nut_D3D_CBlocker_Check (sub_8264DCD0) until it returns 0. With the
+// Xenos GPU disabled (no plugin, native-rendering mode) the fence value is
+// never written, so the D3D loader thread spins forever during boot asset
+// loading. There is no GPU to wait for, so report every fence as already
+// satisfied (r3 = 0), letting BlockOnFence's loop exit immediately.
+// ponytail: remove once the native renderer signals real fences.
+REX_HOOK_RAW(sub_8264DCD0) {
+    (void)base;
+    ctx.r3.u64 = 0;
+}
