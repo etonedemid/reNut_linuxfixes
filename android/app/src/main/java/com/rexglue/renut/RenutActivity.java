@@ -85,6 +85,10 @@ public class RenutActivity extends Activity
     private native void nativeSurfaceDestroyed();
     private native void nativePumpEvents();
     private native void nativeShutdown();
+    private native void nativeSetPaused(boolean paused);
+    private native int nativeGetFps();
+    private native String nativeGetAchievements();
+    private native void nativeTestAchievement();
 
     private boolean mInitialised = false;
     private boolean mRunning     = false;
@@ -97,6 +101,28 @@ public class RenutActivity extends Activity
     private TextView     mPathText;
     private Button       mPlayBtn;
     private View         mPermCard;   // shown when MANAGE_EXTERNAL_STORAGE not granted
+
+    // In-game side menu (Winlator-style left drawer)
+    private static final int DRAWER_W_DP = 300;
+    private View         mEdgeCatcher;   // thin strip on the left edge for swipe-open
+    private View         mScrim;         // dim background while the drawer is open
+    private LinearLayout mDrawer;        // the sliding panel
+    private TextView      mStatsText;     // FPS/stats overlay (top-left)
+    private TextView      mAchievementsText;
+    private ScrollView    mAchievementsScroll;
+    private boolean       mDrawerOpen = false;
+    private boolean       mHasFocus = true;
+    private boolean       mStatsVisible = false;
+    private final Handler mUiHandler = new Handler(Looper.getMainLooper());
+    private final Runnable mStatsTick = new Runnable() {
+        @Override public void run() {
+            if (mStatsVisible && mInitialised) {
+                int fps = nativeGetFps();
+                mStatsText.setText("FPS: " + fps + (mDrawerOpen ? "  (paused)" : ""));
+                mUiHandler.postDelayed(this, 500);
+            }
+        }
+    };
 
     // -----------------------------------------------------------------------
     // Activity lifecycle
@@ -142,6 +168,19 @@ public class RenutActivity extends Activity
         super.onPause();
     }
 
+    // Pause/resume the whole title (simulation, audio, GPU) whenever the window
+    // loses or gains focus -- leaving the app, the notification shade, a dialog,
+    // etc. Resumes exactly where it left off. Only meaningful once in-game.
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        mHasFocus = hasFocus;
+        if (hasFocus) {
+            enterImmersive();
+        }
+        updatePause();
+    }
+
     @Override
     protected void onDestroy() {
         mRunning = false;
@@ -155,9 +194,12 @@ public class RenutActivity extends Activity
     @Override
     public void onBackPressed() {
         if (mSurface.getVisibility() == View.VISIBLE) {
-            // Return to menu (keep native state for now — re-launch will re-init)
-            mRunning = false;
-            showMenu();
+            // In-game: back gesture toggles the side menu (Quit to library is in it).
+            if (mDrawerOpen) {
+                closeDrawer();
+            } else {
+                openDrawer();
+            }
         } else {
             super.onBackPressed();
         }
@@ -180,6 +222,158 @@ public class RenutActivity extends Activity
         // Main menu
         mMenuScroll = buildMenu();
         mRoot.addView(mMenuScroll, matchParent());
+
+        // In-game side menu overlay (topmost; hidden until a game is running)
+        buildGameOverlay();
+    }
+
+    // -----------------------------------------------------------------------
+    // In-game side menu (left drawer)
+    // -----------------------------------------------------------------------
+
+    private void buildGameOverlay() {
+        // FPS / stats overlay, top-left.
+        mStatsText = new TextView(this);
+        mStatsText.setTextColor(0xFF00FF66);
+        mStatsText.setTextSize(13);
+        mStatsText.setTypeface(Typeface.MONOSPACE);
+        mStatsText.setPadding(dp(10), dp(6), dp(10), dp(6));
+        mStatsText.setBackgroundColor(0x66000000);
+        mStatsText.setVisibility(View.GONE);
+        FrameLayout.LayoutParams statsLp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        statsLp.leftMargin = dp(8);
+        statsLp.topMargin = dp(8);
+        mStatsText.setLayoutParams(statsLp);
+        mRoot.addView(mStatsText);
+
+        // Scrim (tap to close).
+        mScrim = new View(this);
+        mScrim.setBackgroundColor(0x99000000);
+        mScrim.setVisibility(View.GONE);
+        mScrim.setOnClickListener(v -> closeDrawer());
+        mRoot.addView(mScrim, matchParent());
+
+        // The sliding drawer panel.
+        mDrawer = buildDrawerPanel();
+        FrameLayout.LayoutParams drawerLp = new FrameLayout.LayoutParams(
+                dp(DRAWER_W_DP), ViewGroup.LayoutParams.MATCH_PARENT);
+        mDrawer.setLayoutParams(drawerLp);
+        mDrawer.setTranslationX(-dp(DRAWER_W_DP));
+        mDrawer.setVisibility(View.GONE);
+        mRoot.addView(mDrawer);
+
+        // Left-edge swipe catcher (only active in-game).
+        mEdgeCatcher = new View(this);
+        FrameLayout.LayoutParams edgeLp = new FrameLayout.LayoutParams(
+                dp(24), ViewGroup.LayoutParams.MATCH_PARENT);
+        mEdgeCatcher.setLayoutParams(edgeLp);
+        mEdgeCatcher.setVisibility(View.GONE);
+        mEdgeCatcher.setOnTouchListener(new View.OnTouchListener() {
+            float downX;
+            @Override public boolean onTouch(View v, MotionEvent e) {
+                switch (e.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN: downX = e.getRawX(); return true;
+                    case MotionEvent.ACTION_UP:
+                        if (e.getRawX() - downX > dp(40)) openDrawer();
+                        return true;
+                }
+                return true;
+            }
+        });
+        mRoot.addView(mEdgeCatcher);
+    }
+
+    private LinearLayout buildDrawerPanel() {
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setBackgroundColor(0xFF0d1117);
+        col.setPadding(dp(18), dp(40), dp(18), dp(20));
+
+        TextView title = new TextView(this);
+        title.setText("reNut");
+        title.setTextColor(C_ACCENT);
+        title.setTextSize(26);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        col.addView(title);
+
+        col.addView(drawerButton("Resume game", v -> closeDrawer()));
+        col.addView(drawerButton("FPS / stats overlay", v -> toggleStats()));
+        col.addView(drawerButton("Achievements", v -> toggleAchievements()));
+        col.addView(drawerButton("Quit to library", v -> { closeDrawer(); showMenu(); }));
+
+        // Achievements panel (hidden until opened).
+        mAchievementsText = new TextView(this);
+        mAchievementsText.setTextColor(C_TEXT);
+        mAchievementsText.setTextSize(12);
+        mAchievementsText.setTypeface(Typeface.MONOSPACE);
+        mAchievementsText.setPadding(0, dp(10), 0, 0);
+        mAchievementsScroll = new ScrollView(this);
+        mAchievementsScroll.addView(mAchievementsText);
+        mAchievementsScroll.setVisibility(View.GONE);
+        LinearLayout.LayoutParams achLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+        achLp.topMargin = dp(8);
+        col.addView(mAchievementsScroll, achLp);
+        return col;
+    }
+
+    private Button drawerButton(String text, View.OnClickListener onClick) {
+        Button b = new Button(this);
+        b.setText(text);
+        b.setAllCaps(false);
+        b.setTextSize(15);
+        b.setTextColor(C_TEXT);
+        b.setBackgroundColor(0xFF161b22);
+        b.setOnClickListener(onClick);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(10);
+        b.setLayoutParams(lp);
+        return b;
+    }
+
+    private void openDrawer() {
+        if (mDrawerOpen || mSurface.getVisibility() != View.VISIBLE) return;
+        mDrawerOpen = true;
+        mScrim.setVisibility(View.VISIBLE);
+        mDrawer.setVisibility(View.VISIBLE);
+        mDrawer.animate().translationX(0).setDuration(180).start();
+        updatePause();
+    }
+
+    private void closeDrawer() {
+        if (!mDrawerOpen) return;
+        mDrawerOpen = false;
+        mDrawer.animate().translationX(-dp(DRAWER_W_DP)).setDuration(180)
+                .withEndAction(() -> mDrawer.setVisibility(View.GONE)).start();
+        mScrim.setVisibility(View.GONE);
+        if (mAchievementsScroll != null) mAchievementsScroll.setVisibility(View.GONE);
+        updatePause();
+    }
+
+    private void toggleStats() {
+        mStatsVisible = !mStatsVisible;
+        mStatsText.setVisibility(mStatsVisible ? View.VISIBLE : View.GONE);
+        mUiHandler.removeCallbacks(mStatsTick);
+        if (mStatsVisible) mUiHandler.post(mStatsTick);
+    }
+
+    private void toggleAchievements() {
+        boolean show = mAchievementsScroll.getVisibility() != View.VISIBLE;
+        mAchievementsScroll.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (show) {
+            mAchievementsText.setText("Loading...");
+            new Thread(() -> {
+                final String txt = nativeGetAchievements();
+                mUiHandler.post(() -> mAchievementsText.setText(txt));
+            }, "ach-load").start();
+        }
+    }
+
+    // Pause the title whenever the drawer is open OR the window is unfocused.
+    private void updatePause() {
+        if (mInitialised) nativeSetPaused(mDrawerOpen || !mHasFocus);
     }
 
     private ScrollView buildMenu() {
@@ -225,13 +419,6 @@ public class RenutActivity extends Activity
         sub.setLayoutParams(subLp);
         col.addView(sub);
 
-        // ── Files-access permission card (hidden if already granted) ──────
-        mPermCard = buildPermissionCard();
-        col.addView(mPermCard);
-
-        // ── Library card ──────────────────────────────────────────────────
-        col.addView(buildLibraryCard());
-
         // ── PLAY button ────────────────────────────────────────────────────
         mPlayBtn = new Button(this);
         mPlayBtn.setText("▶  PLAY");
@@ -246,6 +433,15 @@ public class RenutActivity extends Activity
         mPlayBtn.setOnClickListener(v -> startGame());
         refreshPlayButton();
         col.addView(mPlayBtn);
+
+        // ── Files-access permission card (hidden if already granted) ──────
+        mPermCard = buildPermissionCard();
+        col.addView(mPermCard);
+
+        // ── Library card ──────────────────────────────────────────────────
+        col.addView(buildLibraryCard());
+
+
 
         // ── Hint ───────────────────────────────────────────────────────────
         TextView hint = new TextView(this);
@@ -771,11 +967,22 @@ public class RenutActivity extends Activity
     private void showMenu() {
         mMenuScroll.setVisibility(View.VISIBLE);
         mSurface.setVisibility(View.GONE);
+        // Tear down the in-game overlay state.
+        mRunning = false;
+        mDrawerOpen = false;
+        if (mDrawer != null) { mDrawer.setVisibility(View.GONE);
+                               mDrawer.setTranslationX(-dp(DRAWER_W_DP)); }
+        if (mScrim != null) mScrim.setVisibility(View.GONE);
+        if (mEdgeCatcher != null) mEdgeCatcher.setVisibility(View.GONE);
+        if (mStatsText != null) mStatsText.setVisibility(View.GONE);
+        mStatsVisible = false;
+        mUiHandler.removeCallbacks(mStatsTick);
     }
 
     private void showGame() {
         mMenuScroll.setVisibility(View.GONE);
         mSurface.setVisibility(View.VISIBLE);
+        if (mEdgeCatcher != null) mEdgeCatcher.setVisibility(View.VISIBLE);
     }
 
     // -----------------------------------------------------------------------

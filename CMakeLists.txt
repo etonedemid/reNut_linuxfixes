@@ -25,12 +25,6 @@ if(REXSDK_DIR AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     add_compile_options(-mssse3)
 endif()
 
-# Force-include the glibc compat header for ALL translation units (rexcore, SDL3,
-# imgui, FFmpeg, glslang, ...) so its .symver directives pin every symbol to an old
-# glibc version. This lets the Linux binary run against older system glibc than the
-# build host -- i.e. the release isn't tied to the builder's glibc. Must precede the
-# add_subdirectory() in rexglue.cmake so subdir targets inherit the flag.
-# ponytail: symver-pin, not static glibc -- the GTK3/SDL3 stack is dynamic anyway.
 if(REXSDK_DIR AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_compile_options(-include ${REXSDK_DIR}/src/core/glibc_compat_force.h)
 endif()
