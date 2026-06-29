@@ -35,3 +35,17 @@ REX_EXTERN(sub_82BB2C70) {
     }
     std::memmove(REX_RAW_ADDR(dst), REX_RAW_ADDR(src), n);
 }
+
+// nut_Render_CCalVideoRenderer @ 0x82A0D9E8
+//
+// Blits a decoded intro-movie frame. Video decode currently produces invalid
+// XMEDIA_VIDEO_FRAMEs (garbage width/height/pitch), so the internal scanline
+// copy runs with an absurd size (~8.5 GB observed) and SIGSEGVs on the first
+// logo -- on every GPU. (On RADV the same bad surface also crashes the GPU-side
+// IssueCopy resolve first.) There is no valid frame to draw, so skip the render
+// entirely; the movie's audio and timing still run, the player advances, and the
+// game boots into 3D. Movies show black until the video frame path is fixed.
+REX_EXTERN(sub_82A0D9E8) {
+    REX_FUNC_PROLOGUE();
+    ctx.r3.u64 = 0;
+}
